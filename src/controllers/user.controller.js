@@ -4,6 +4,7 @@ import { User } from "../models/user.models.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
 import { ApiResponse } from "../utils/ApiResponse.js"
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 
 
@@ -157,7 +158,9 @@ const logoutUser = asyncHandler(async (req, res) => {
     await User.findByIdAndUpdate(
         req.user._id,
         {
-            $set: { refreshToken: undefined }
+            $unset: {
+                refreshToken: 1   // this removes the field form document
+            }
         },
         {
             new: true
@@ -226,7 +229,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     const { oldPassword, newPassword } = req.body
     //find user in database
     const user = await User.findById(req.user?._id)
-    const isPasswordCorrect = await isPasswordCorrect(oldPassword)
+    const isPasswordCorrect = await user.isPasswordCorrect(oldPassword)
     if (!isPasswordCorrect) {
         throw new ApiError(400, "Invalid Old password")
     }
@@ -235,7 +238,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     await user.save({ validateBeforeSave: false })
     return res
         .status(200)
-        .josn(new ApiResponse(200, {}, "Password updated successfully"))
+        .json(new ApiResponse(200, {}, "Password updated successfully"))
 });
 
 const getCurrentUser = asyncHandler(async (req, res) => {
@@ -266,7 +269,7 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
 
     return res
         .status(200)
-        .josn(new ApiResponse(200, user, "Account details updated successfully"))
+        .json(new ApiResponse(200, user, "Account details updated successfully"))
 });
 
 const updateUserAvatar = asyncHandler(async (req, res) => {
@@ -277,11 +280,12 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     }
 
     const avatar = await uploadOnCloudinary(avatarLocalPath)
-    if (avatar.url) {
+    if (!avatar.url) {
         throw new ApiError(400, "Error while uploading avatar file")
     }
 
-    const user = await User.findByIdAndUpdate(req.user?._id,
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
         {
             $set: {
                 avatar: avatar.url
@@ -305,11 +309,12 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
     }
 
     const coverImage = await uploadOnCloudinary(coverImageLocalPath)
-    if (coverImageLocalPath.url) {
+    if (!coverImage.url) {
         throw new ApiError(400, "Error while uploading coverImage file")
     }
 
-    const user = await User.findByIdAndUpdate(req.user?._id,
+    const user = await User.findByIdAndUpdate(
+        req.user?._id,
         {
             $set: {
                 coverImage: coverImage.url
@@ -321,7 +326,7 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
 
     return res
         .status(200)
-        .json(new ApiError(200, user, "coverImage file updated successfully"))
+        .json(new ApiError(200, user[0], "coverImage file updated successfully"))
 
 })
 
@@ -403,7 +408,7 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
 
     return res
         .status(200)
-        .josn(new ApiResponse(200, channel[0], "user channel fetched succesfully"))
+        .json(new ApiResponse(200, channel[0], "user channel fetched succesfully"))
 
 })
 
@@ -411,7 +416,7 @@ const getWatchHistory = asyncHandler(async (req, res) => {
     const user = await User.aggregate([
         {
             $match: {
-                _id: new mongoose.Types.ObjectId(user.req?._id)   // on mongodb id is basically an object so here mongoose converts that in it an id 
+                _id: new mongoose.Types.ObjectId(req.user?._id)   // on mongodb id is basically an object so here mongoose converts that in it an id 
             }
         },
         {
@@ -457,8 +462,8 @@ const getWatchHistory = asyncHandler(async (req, res) => {
 
     // here we use user[0] because  in aggration pipline  we have to return first value
     return res
-        .stauc(200)
-        .json(new ApiResponse(200, user[0].WatchHistory, "watch history fetch successfully"))
+        .status(200)
+        .json(new ApiResponse(200, user[0].watchHistory, "watch history fetch successfully"))
 
 })
 
