@@ -241,7 +241,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 const getCurrentUser = asyncHandler(async (req, res) => {
     return res
         .status(200)
-        .json(200, req.user, "current user fetch succesfully")
+        .json(new ApiResponse(200, req.user, "current user fetch succesfully"))
 });
 
 
@@ -325,6 +325,144 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
 
 })
 
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+    const { userName } = req.params
+
+    if (!userName?.trim()) {
+        throw new ApiError(400, "username is missing")
+    }
+    // aggration pipeline
+    const channel = await User.aggregate([
+        {
+            // here we match user name from data base
+            $match: {
+                userName: userName?.toLowerCase()
+            },
+        },
+        // here we check how many subscriber he have from the base of channel
+        {
+            $lookup: {
+                from: "subscriptions",     // this is model name but we write it here  who the name store in database
+                localField: "_id",             //field from the input documents mean we search on id
+                foreignField: "channel",            //field from the documents of the "from" collection
+                as: "subscribers"             //output array field
+            },
+
+        },
+
+        // here we check how many we have subscribed to others channels base on subscriber
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribedTo"
+            }
+        },
+        // here we add the above fields to the   user document 
+        {
+            $addFields: {
+                subscriberCount: {
+                    $size: "$subscribers"
+                },
+
+                channelSubscribedToCount: {
+                    $size: "$subscribedTo"
+                },
+
+                isSubscriber: {
+                    $cond: {
+                        if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+        // here which thing we have to show  or pass on we just have to put one  in front of that fields 
+        {
+            $project: {
+                fullName: 1,
+                username: 1,
+                subscriberCount: 1,
+                channelSubscribedToCount: 1,
+                isSubscriber: 1,
+                avatar: 1,
+                coverImage: 1,
+                email: 1
+
+            }
+        }
+    ])
+
+    console.log(channel)
+
+    if (!channel?.length) {
+        throw new ApiError(404, "channel does not exists")
+    }
+
+    return res
+        .status(200)
+        .josn(new ApiResponse(200, channel[0], "user channel fetched succesfully"))
+
+})
+
+const getWatchHistory = asyncHandler(async (req, res) => {
+    const user = await User.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(user.req?._id)   // on mongodb id is basically an object so here mongoose converts that in it an id 
+            }
+        },
+        {
+            $lookup: {
+                from: "Videos",
+                localField: "watchHistory",
+                foreignField: "_id",
+                as: "watchHistory",
+                //nested pipeline to get user data
+                pipeline: [
+                    {
+                        $lookup: {
+                            from: "Users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: [
+                                {
+                                    $project: {
+                                        fullName: 1,
+                                        userName: 1,
+                                        avatar: 1
+                                    }
+                                },
+                                // in above code we get result in an array and further we have to do 0 index to tackel this we use down below code
+                                {
+                                    $addFields: {
+                                        owner: {
+                                            $first: "$owner"
+                                        }
+                                    }
+                                }
+
+                            ]
+                        }
+                    }
+                ]
+
+
+            }
+        }
+    ])
+
+    // here we use user[0] because  in aggration pipline  we have to return first value
+    return res
+        .stauc(200)
+        .json(new ApiResponse(200, user[0].WatchHistory, "watch history fetch successfully"))
+
+})
+
+
 
 export {
     registerUser,
@@ -335,5 +473,7 @@ export {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvatar,
-    updateUserCoverImage
+    updateUserCoverImage,
+    getUserChannelProfile,
+    getWatchHistory
 }
